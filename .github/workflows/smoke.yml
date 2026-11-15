@@ -1,0 +1,66 @@
+name: 插件冒烟
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    name: core ${{ matrix.core_ref }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        core_ref: [main, core-v2.0.0]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 检出 core
+        uses: actions/checkout@v4
+        with:
+          repository: Attenna/Arknights-Theurgy-Cup-Like-Streaming-Assistant
+          ref: ${{ matrix.core_ref }}
+          path: core
+
+      - name: 检出依赖 control_panel_base
+        uses: actions/checkout@v4
+        with:
+          repository: Attenna/shiyingshi-plugin-control-panel-base
+          ref: v1.0.0
+          path: deps/control_panel_base
+
+      - name: 安装 Godot 4.5.1 mono
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Invoke-WebRequest -Uri "https://github.com/godotengine/godot/releases/download/4.5.1-stable/Godot_v4.5.1-stable_mono_win64.zip" -OutFile godot.zip
+          Expand-Archive godot.zip -DestinationPath tools
+          $godot = (Get-ChildItem tools -Recurse -Filter "*console.exe" | Select-Object -First 1).FullName
+          Add-Content $env:GITHUB_ENV "GODOT=$godot"
+
+      - name: 放入插件与依赖并冒烟
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Remove-Item core/plugins/player_database -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item core/plugins/control_panel_base -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force core/plugins/player_database, core/plugins/control_panel_base | Out-Null
+
+          git archive --format=zip -o plugin.zip HEAD
+          Expand-Archive plugin.zip -DestinationPath core/plugins/player_database
+          Remove-Item core/plugins/player_database/.github -Recurse -Force -ErrorAction SilentlyContinue
+
+          git -C deps/control_panel_base archive --format=zip -o dep.zip HEAD
+          Expand-Archive dep.zip -DestinationPath core/plugins/control_panel_base
+
+          $old = $ErrorActionPreference
+          $ErrorActionPreference = 'Continue'
+          & $env:GODOT --headless --path core --import
+          $out = & $env:GODOT --headless --path core --quit-after 300 2>&1
+          $ErrorActionPreference = $old
+          $text = ($out | Out-String)
+          Write-Host $text
+          if ($text -notmatch '插件已加载并启用: player_database') { throw "player_database 未加载" }
+          if ($text -match 'SCRIPT ERROR') { throw "存在 SCRIPT ERROR" }
