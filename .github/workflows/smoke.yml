@@ -52,7 +52,7 @@ jobs:
           Expand-Archive plugin.zip -DestinationPath core/plugins/player_database
           Remove-Item core/plugins/player_database/.github -Recurse -Force -ErrorAction SilentlyContinue
 
-          git -C deps/control_panel_base archive --format=zip -o dep.zip HEAD
+          git -C deps/control_panel_base archive --format=zip -o ../../dep.zip HEAD
           Expand-Archive dep.zip -DestinationPath core/plugins/control_panel_base
 
           $old = $ErrorActionPreference
